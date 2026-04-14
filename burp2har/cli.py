@@ -20,7 +20,7 @@ import sys
 import traceback
 import xml.etree.ElementTree as ET
 from collections import Counter
-from typing import Optional
+from typing import List, Optional
 from urllib.parse import urlparse
 import pathlib
 
@@ -30,6 +30,7 @@ from .config import DISPLAY_NAME, PROJECT_URL, RELEASES_PAGE_URL, VERSION
 from .first_run import is_first_run, mark_initialized
 from .functions import burp2har_run
 from .updater import check_for_updates, perform_update
+from .har_validator import HarValidationStatus, validate_har
 from .validator import CompatibilityStatus, validate_xml
 
 # ── Rich (optional — graceful fallback to plain text) ─────────────────────────
@@ -185,6 +186,25 @@ def convert(
         False, "--auto-check-updates",
         help="Silent update check — warns only if a newer version exists.",
     ),
+    only_host: Optional[List[str]] = typer.Option(
+        None, "--only-host",
+        help="Keep only items from this host. Can be repeated (OR logic).",
+        show_default=False,
+    ),
+    only_status: Optional[List[str]] = typer.Option(
+        None, "--only-status",
+        help="Keep only items with this HTTP status code. Can be repeated (OR logic).",
+        show_default=False,
+    ),
+    only_method: Optional[List[str]] = typer.Option(
+        None, "--only-method",
+        help="Keep only items with this HTTP method. Can be repeated (OR logic).",
+        show_default=False,
+    ),
+    anonymize: bool = typer.Option(
+        False, "--anonymize",
+        help="Redact Authorization, Cookie, Set-Cookie headers and sensitive query params.",
+    ),
     verbose: bool = typer.Option(
         False, "--verbose", "-v",
         help="Show full stack trace on errors.",
@@ -273,8 +293,19 @@ def convert(
         print(f"    Input:  {filename}")
         print(f"    Output: {output}")
 
+    # ── Build filters dict ───────────────────────────────────────────────────
+    filters: Optional[dict] = None
+    if only_host or only_status or only_method:
+        filters = {}
+        if only_host:
+            filters["host"] = [h.lower() for h in only_host]
+        if only_status:
+            filters["status"] = list(only_status)
+        if only_method:
+            filters["method"] = [m.upper() for m in only_method]
+
     try:
-        stats = burp2har_run(filename, output, xml_text=xml_text)
+        stats = burp2har_run(filename, output, xml_text=xml_text, filters=filters, anonymize=anonymize)
     except Exception as exc:
         _error(f"Conversion failed: {exc}")
         if verbose:
@@ -287,15 +318,26 @@ def convert(
         _console.print(f"\n  [bold green]Conversion complete.[/bold green]")
         _console.print(f"  Output: [cyan]{output}[/cyan]")
         if stats:
+            filtered_msg = (
+                f"  |  Filtered: [dim]{stats['filtered']}[/dim]"
+                if stats.get("filtered")
+                else ""
+            )
             _console.print(
                 f"  Converted: [green]{stats['entries']}[/green]"
                 f"  |  Skipped: [yellow]{stats['skipped']}[/yellow]"
+                f"{filtered_msg}"
             )
+            if anonymize:
+                _console.print("  [dim]Anonymization applied — sensitive values redacted.[/dim]")
     else:
         print(f"\n  Conversion complete.")
         print(f"  Output: {output}")
         if stats:
-            print(f"  Converted: {stats['entries']}  |  Skipped: {stats['skipped']}")
+            filtered_msg = f"  |  Filtered: {stats['filtered']}" if stats.get("filtered") else ""
+            print(f"  Converted: {stats['entries']}  |  Skipped: {stats['skipped']}{filtered_msg}")
+            if anonymize:
+                print("  Anonymization applied — sensitive values redacted.")
     print()
 
 
@@ -467,6 +509,96 @@ def info(
     print()
 
 
+# ── validate-har ──────────────────────────────────────────────────────────────
+
+@app.command(name="validate-har")
+def validate_har_cmd(
+    filename: pathlib.Path = typer.Argument(
+        ..., help="HAR file to validate.", show_default=False
+    ),
+    show_warnings: bool = typer.Option(
+        True, "--warnings/--no-warnings",
+        help="Show warning details (default: on).",
+    ),
+) -> None:
+    """Validate an existing HAR file for structural correctness."""
+    _banner()
+
+    if not filename.exists():
+        _error(f"File not found: {filename}")
+        raise typer.Exit(1)
+    if not filename.is_file():
+        _error(f"Path is not a file: {filename}")
+        raise typer.Exit(1)
+    if filename.suffix.lower() != ".har":
+        _warn(f"'{filename.name}' does not have .har extension — proceeding anyway")
+
+    _step("Reading HAR file")
+    _ok(f"Found: {filename}  ({filename.stat().st_size:,} bytes)")
+
+    try:
+        har_text = filename.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        _error("File is not valid UTF-8.  HAR files must be UTF-8 encoded.")
+        raise typer.Exit(2)
+    except Exception as exc:
+        _error(f"Cannot read file: {exc}")
+        raise typer.Exit(1)
+
+    _step("Validating HAR structure")
+    result = validate_har(har_text)
+
+    _STATUS_INFO = {
+        HarValidationStatus.VALID:               ("✓ VALID",                "green"),
+        HarValidationStatus.VALID_WITH_WARNINGS:  ("! VALID WITH WARNINGS",  "yellow"),
+        HarValidationStatus.INVALID:              ("✗ INVALID",              "red"),
+    }
+    label, color = _STATUS_INFO[result.status]
+
+    _separator()
+
+    if _HAS_RICH:
+        _console.print(f"\n  [{color}]{label}[/{color}]")
+        _console.print(f"  {result.message}")
+        _console.print(
+            f"\n  Entries: [bold]{result.entry_count}[/bold]"
+            f"  |  Errors: [red]{len(result.errors)}[/red]"
+            f"  |  Warnings: [yellow]{len(result.warnings)}[/yellow]"
+        )
+    else:
+        print(f"\n  {label}")
+        print(f"  {result.message}")
+        print(
+            f"\n  Entries: {result.entry_count}"
+            f"  |  Errors: {len(result.errors)}"
+            f"  |  Warnings: {len(result.warnings)}"
+        )
+
+    if result.errors:
+        _step("Errors")
+        limit = min(len(result.errors), 20)
+        for err in result.errors[:limit]:
+            if _HAS_RICH:
+                _err_console.print(f"    [red]✗[/red]  {err}")
+            else:
+                print(f"    ✗  {err}", file=sys.stderr)
+        if len(result.errors) > limit:
+            _warn(f"... and {len(result.errors) - limit} more error(s) omitted")
+
+    if result.warnings and show_warnings:
+        _step("Warnings")
+        limit = min(len(result.warnings), 20)
+        for w in result.warnings[:limit]:
+            _warn(w)
+        if len(result.warnings) > limit:
+            _warn(f"... and {len(result.warnings) - limit} more warning(s) omitted")
+
+    print()
+
+    if result.status == HarValidationStatus.INVALID:
+        raise typer.Exit(2)
+
+
 # ── update ────────────────────────────────────────────────────────────────────
 
 @app.command(name="update")
@@ -558,12 +690,13 @@ def _print_help() -> None:
         cmd_tbl.add_column(style="cyan bold", no_wrap=True)
         cmd_tbl.add_column()
         for cmd, desc in [
-            ("burp2har convert <file.xml>",  "Convert XML -> HAR"),
-            ("burp2har validate <file.xml>", "Validate XML structure and compatibility"),
-            ("burp2har info <file.xml>",     "Show file statistics and metadata"),
-            ("burp2har update",              "Check for and install the latest version"),
-            ("burp2har help",                "Show this guide"),
-            ("burp2har <file.xml>",          "Shorthand for 'convert'"),
+            ("burp2har convert <file.xml>",      "Convert XML -> HAR"),
+            ("burp2har validate <file.xml>",     "Validate Burp XML structure and compatibility"),
+            ("burp2har validate-har <file.har>", "Validate an existing HAR file"),
+            ("burp2har info <file.xml>",         "Show file statistics and metadata"),
+            ("burp2har update",                  "Check for and install the latest version"),
+            ("burp2har help",                    "Show this guide"),
+            ("burp2har <file.xml>",              "Shorthand for 'convert'"),
         ]:
             cmd_tbl.add_row(cmd, desc)
         _console.print(cmd_tbl)
@@ -578,10 +711,14 @@ def _print_help() -> None:
         opt_tbl.add_column("Description")
         opt_tbl.add_column("Default", style="dim")
         for opt, desc, dflt in [
-            ("--output, -o PATH",    "Destination .har file",                     "same dir, .har"),
-            ("--check-updates",      "Verbose update check before converting",     "off"),
-            ("--auto-check-updates", "Silent update check (warns if newer)",       "off"),
-            ("--verbose, -v",        "Show full stack trace on errors",            "off"),
+            ("--output, -o PATH",    "Destination .har file",                          "same dir, .har"),
+            ("--only-host TEXT",     "Keep only items from this host (repeatable)",    "all"),
+            ("--only-status TEXT",   "Keep only items with this status (repeatable)",  "all"),
+            ("--only-method TEXT",   "Keep only items with this method (repeatable)",  "all"),
+            ("--anonymize",          "Redact Authorization, Cookie and sensitive params", "off"),
+            ("--check-updates",      "Verbose update check before converting",         "off"),
+            ("--auto-check-updates", "Silent update check (warns if newer)",           "off"),
+            ("--verbose, -v",        "Show full stack trace on errors",                "off"),
         ]:
             opt_tbl.add_row(opt, desc, dflt)
         _console.print(opt_tbl)
@@ -596,6 +733,10 @@ def _print_help() -> None:
             ("Validate without converting",             "burp2har validate export.xml"),
             ("Show file statistics",                    "burp2har info export.xml"),
             ("Check and install updates",               "burp2har update"),
+            ("Filter by host",                          "burp2har convert export.xml --only-host api.example.com"),
+            ("Filter POST requests only",               "burp2har convert export.xml --only-method POST"),
+            ("Filter by status code",                   "burp2har convert export.xml --only-status 200 --only-status 302"),
+            ("Redact sensitive data",                   "burp2har convert export.xml --anonymize"),
             ("Convert with verbose update check",       "burp2har convert export.xml --check-updates"),
             ("Run without installing (repo root)",      "python -m burp2har.cli convert export.xml"),
         ]:
@@ -632,18 +773,23 @@ def _print_help() -> None:
         print(f"\n  {sep}\n")
         print("  COMMANDS")
         for cmd, desc in [
-            ("convert <file.xml>",  "Convert XML -> HAR"),
-            ("validate <file.xml>", "Validate XML structure"),
-            ("info <file.xml>",     "Show file statistics"),
-            ("update",              "Install latest version"),
-            ("help",                "Show this guide"),
-            ("<file.xml>",          "Shorthand for convert"),
+            ("convert <file.xml>",      "Convert XML -> HAR"),
+            ("validate <file.xml>",     "Validate Burp XML structure"),
+            ("validate-har <file.har>", "Validate an existing HAR file"),
+            ("info <file.xml>",         "Show file statistics"),
+            ("update",                  "Install latest version"),
+            ("help",                    "Show this guide"),
+            ("<file.xml>",              "Shorthand for convert"),
         ]:
             print(f"    burp2har {cmd:<25}  {desc}")
         print(f"\n  {sep}\n")
         print("  OPTIONS  (convert)")
         for opt, desc in [
             ("--output, -o PATH",    "Destination .har file"),
+            ("--only-host TEXT",     "Keep only items from this host (repeatable)"),
+            ("--only-status TEXT",   "Keep only items with this status (repeatable)"),
+            ("--only-method TEXT",   "Keep only items with this method (repeatable)"),
+            ("--anonymize",          "Redact sensitive headers and query params"),
             ("--check-updates",      "Verbose update check"),
             ("--auto-check-updates", "Silent update check"),
             ("--verbose, -v",        "Show stack trace on error"),
@@ -689,7 +835,7 @@ def _app_callback(
 
 # ── Entry point ────────────────────────────────────────────────────────────────
 
-_SUBCOMMANDS = {"convert", "validate", "info", "update", "help"}
+_SUBCOMMANDS = {"convert", "validate", "validate-har", "info", "update", "help"}
 
 
 def run() -> None:

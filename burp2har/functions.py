@@ -10,6 +10,8 @@ def burp2har_run(
     xml_path: pathlib.Path,
     result_path: pathlib.Path,
     xml_text: Optional[str] = None,
+    filters: Optional[dict] = None,
+    anonymize: bool = False,
 ) -> Optional[dict]:
     """
     Convert *xml_path* to a HAR file at *result_path*.
@@ -20,9 +22,17 @@ def burp2har_run(
     result_path : destination .har file
     xml_text    : pre-read XML string (avoids a second disk read when the
                   caller already has the content, e.g. after validation)
+    filters     : optional dict with keys 'host', 'method', 'status' —
+                  each a list of strings; AND across keys, OR within each key
+    anonymize   : if True, redact sensitive headers and query parameters
 
     Returns
     -------
-    dict with 'entries' and 'skipped' counts, or None on unexpected failure.
+    dict with 'entries', 'skipped', and 'filtered' counts, or None on failure.
     """
-    return HarLog().generate_har(xml_path, result_path, xml_text=xml_text)
+    return HarLog().generate_har(
+        xml_path, result_path,
+        xml_text=xml_text,
+        filters=filters,
+        anonymize=anonymize,
+    )

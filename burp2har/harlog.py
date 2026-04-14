@@ -1,5 +1,16 @@
+"""
+Core XML-to-HAR converter for burp2har.
+
+Key design decisions:
+- get_entries() uses iterparse + root.clear() to process one <item> at a time,
+  avoiding building a full DOM tree in memory (critical for files > 100 MB).
+- Filters are evaluated on raw XML text values before the expensive base64 decode.
+- Anonymization replaces sensitive header/query values with '[REDACTED]' in-place
+  after entry construction, without altering the HAR structure.
+"""
 from __future__ import annotations
 
+import io
 import json
 import sys
 import time
@@ -7,7 +18,7 @@ import xml.etree.ElementTree as ET
 from base64 import b64decode, b64encode
 from datetime import datetime
 from http import cookies
-from typing import Optional
+from typing import Dict, FrozenSet, List, Optional, Tuple, Union
 from urllib import parse
 
 from .config import VERSION
@@ -15,11 +26,121 @@ from .config import VERSION
 
 # ─── Logging helpers ──────────────────────────────────────────────────────────
 
-def _log(msg):
+def _log(msg: str) -> None:
     print(f"[burp2har] {msg}", file=sys.stderr)
 
-def _warn(msg):
+def _warn(msg: str) -> None:
     print(f"[burp2har] WARNING: {msg}", file=sys.stderr)
+
+
+# ─── Anonymization constants and helpers ──────────────────────────────────────
+
+# Header names (lowercase) whose values are fully redacted when --anonymize is on.
+_SENSITIVE_HEADERS: FrozenSet[str] = frozenset({
+    'authorization',
+    'proxy-authorization',
+    'cookie',
+    'set-cookie',
+    'x-api-key',
+    'x-auth-token',
+    'x-access-token',
+    'x-csrf-token',
+})
+
+# Query-parameter names (lowercase) whose values are masked when --anonymize is on.
+_SENSITIVE_QUERY_PARAMS: FrozenSet[str] = frozenset({
+    'token',
+    'access_token',
+    'refresh_token',
+    'id_token',
+    'api_key',
+    'apikey',
+    'api_token',
+    'auth_token',
+    'session',
+    'sessionid',
+    'session_id',
+    'jsessionid',
+    'key',
+    'secret',
+    'client_secret',
+    'password',
+    'passwd',
+    'pwd',
+})
+
+_REDACTED = '[REDACTED]'
+
+
+def _sanitize_headers(headers: List[Dict]) -> List[Dict]:
+    """
+    Return a copy of *headers* with values of sensitive headers replaced by
+    ``'[REDACTED]'``.  Non-sensitive headers are returned unchanged (same dict).
+    """
+    result = []
+    for h in headers:
+        if h.get('name', '').lower() in _SENSITIVE_HEADERS:
+            result.append({'name': h['name'], 'value': _REDACTED})
+        else:
+            result.append(h)
+    return result
+
+
+def _sanitize_query(query_list: List[Dict]) -> List[Dict]:
+    """
+    Return a copy of *query_list* with values of sensitive parameters replaced
+    by ``'[REDACTED]'``.
+    """
+    result = []
+    for q in query_list:
+        if q.get('name', '').lower() in _SENSITIVE_QUERY_PARAMS:
+            result.append({'name': q['name'], 'value': _REDACTED})
+        else:
+            result.append(q)
+    return result
+
+
+def _apply_anonymization(entry: Dict) -> None:
+    """
+    Mutate *entry* in-place: redact sensitive headers, query parameters, and
+    cookie lists from both the request and response sections.
+    """
+    req = entry.get('request', {})
+    req['headers']     = _sanitize_headers(req.get('headers', []))
+    req['queryString'] = _sanitize_query(req.get('queryString', []))
+    req['cookies']     = []   # cookies already captured in 'cookie' header above
+
+    resp = entry.get('response', {})
+    resp['headers'] = _sanitize_headers(resp.get('headers', []))
+
+
+# ─── Filter helper ────────────────────────────────────────────────────────────
+
+def _passes_filter(
+    item_host:   str,
+    item_method: str,
+    item_status: str,
+    filters:     Dict,
+) -> bool:
+    """
+    Return True if the item passes all active filters (AND logic across types,
+    OR logic within each type's value list).
+
+    Parameters
+    ----------
+    item_host   : value of the XML <host> element, already lowercased
+    item_method : value of the XML <method> element, already uppercased
+    item_status : value of the XML <status> element as string
+    filters     : dict with optional keys 'host', 'method', 'status',
+                  each mapping to a list of normalised strings to match against
+    """
+    if 'host' in filters and item_host not in filters['host']:
+        return False
+    if 'method' in filters and item_method not in filters['method']:
+        return False
+    if 'status' in filters and item_status not in filters['status']:
+        return False
+    return True
 
 
 # ─── Time helpers ─────────────────────────────────────────────────────────────
@@ -27,11 +148,11 @@ def _warn(msg):
 class HarTimeFormat:
 
     @staticmethod
-    def timestampToHarTime(timestamp):
-        # '2021-05-02T11:38:56.000Z'
+    def timestampToHarTime(timestamp: float) -> str:
+        """Convert a UNIX timestamp to HAR ISO-8601 format: '2021-05-02T11:38:56.000Z'."""
         return datetime.fromtimestamp(timestamp).isoformat(timespec='milliseconds') + 'Z'
 
-    def transBsToHarTime(self, bs_timeformat):
+    def transBsToHarTime(self, bs_timeformat: str) -> str:
         """
         Translate Burp Suite time format into HAR ISO-8601 format.
 
@@ -53,7 +174,7 @@ class HarTimeFormat:
             return self.getNowHarTime()
         return self.timestampToHarTime(timestamp)
 
-    def getNowHarTime(self):
+    def getNowHarTime(self) -> str:
         return self.timestampToHarTime(time.time())
 
 
@@ -61,10 +182,19 @@ class HarTimeFormat:
 
 class HarLogStructure:
 
-    def constructEntryRequest(self, request_method, request_url, request_httpVersion,
-            request_headers, request_queryString, request_cookies,
-            request_headersSize, request_bodySize, request_postData=None):
-        req = {
+    def constructEntryRequest(
+        self,
+        request_method: str,
+        request_url: str,
+        request_httpVersion: str,
+        request_headers: List[Dict],
+        request_queryString: List[Dict],
+        request_cookies: List[Dict],
+        request_headersSize: int,
+        request_bodySize: int,
+        request_postData: Optional[Dict] = None,
+    ) -> Dict:
+        req: Dict = {
             'method':      request_method,
             'url':         request_url,
             'httpVersion': request_httpVersion,
@@ -78,8 +208,16 @@ class HarLogStructure:
             req['postData'] = request_postData
         return req
 
-    def constructEntryResponse(self, data_status, data_statusText, data_httpVersion,
-            data_headers, data_content, data_headersSize, data_bodySize):
+    def constructEntryResponse(
+        self,
+        data_status: int,
+        data_statusText: str,
+        data_httpVersion: str,
+        data_headers: List[Dict],
+        data_content: Dict,
+        data_headersSize: int,
+        data_bodySize: int,
+    ) -> Dict:
         return {
             'status':        data_status,
             'statusText':    data_statusText,
@@ -94,8 +232,14 @@ class HarLogStructure:
             '_error':        None,
         }
 
-    def constructEntry(self, entry_resourceType, entry_request, entry_response,
-            entry_serverIPAddress, entry_startedDateTime):
+    def constructEntry(
+        self,
+        entry_resourceType: str,
+        entry_request: Dict,
+        entry_response: Dict,
+        entry_serverIPAddress: Optional[str],
+        entry_startedDateTime: str,
+    ) -> Dict:
         return {
             '_initiator':      {'type': 'other'},
             '_priority':       'VeryHigh',
@@ -114,7 +258,12 @@ class HarLogStructure:
             },
         }
 
-    def constructHarLog(self, pages_startedDateTime, pages_title, entries):
+    def constructHarLog(
+        self,
+        pages_startedDateTime: str,
+        pages_title: str,
+        entries: List[Dict],
+    ) -> Dict:
         return {
             'log': {
                 'version': '1.2',
@@ -137,10 +286,14 @@ class HarLogStructure:
 
 # ─── Main converter ───────────────────────────────────────────────────────────
 
+# Type alias for the source accepted by get_entries / iterparse
+_Source = Union[str, 'os.PathLike[str]', io.BytesIO]
+
+
 class HarLog(HarLogStructure):
 
-    def __init__(self):
-        super(HarLog, self).__init__()
+    def __init__(self) -> None:
+        super().__init__()
 
         # Content-types treated as plain text (stored as UTF-8 in HAR)
         self.plains = [
@@ -166,7 +319,7 @@ class HarLog(HarLogStructure):
             'application/octet-stream',
             'application/binary',
         ]
-        # Extension → mimeType fallback when Content-Type header is absent
+        # Extension -> mimeType fallback when Content-Type header is absent
         self.ext_mime = {
             'json':  'application/json',
             'js':    'application/javascript',
@@ -192,16 +345,16 @@ class HarLog(HarLogStructure):
     # ── Header parsing ────────────────────────────────────────────────────────
 
     @staticmethod
-    def getHeadersList(headers_text):
+    def getHeadersList(headers_text: List[bytes]) -> List[Dict]:
         """
         Parse raw HTTP header lines (bytes) into HAR header dicts.
-        Uses maxsplit=1 so header values that contain ': ' are preserved intact.
+        Uses maxsplit=1 so header values that contain ': ' are preserved intact
+        (important for headers like Content-Security-Policy).
         """
-        headers_dict = []
+        headers_dict: List[Dict] = []
         for headers_item in headers_text:
             if not headers_item:
                 continue
-            # maxsplit=1 prevents truncating values that contain ': '
             parts = headers_item.split(b': ', 1)
             if len(parts) < 2:
                 _warn(f"Skipping malformed header line: {headers_item[:80]!r}")
@@ -213,8 +366,9 @@ class HarLog(HarLogStructure):
         return headers_dict
 
     @staticmethod
-    def getQueryList(url):
-        query_list = []
+    def getQueryList(url: str) -> List[Dict]:
+        """Parse URL query string into a HAR queryString list."""
+        query_list: List[Dict] = []
         try:
             for item in parse.parse_qsl(parse.urlparse(url).query):
                 query_list.append({'name': item[0], 'value': parse.quote_plus(item[1])})
@@ -223,9 +377,10 @@ class HarLog(HarLogStructure):
         return query_list
 
     @staticmethod
-    def getCookiesList(cookiesText):
+    def getCookiesList(cookiesText: str) -> List[Dict]:
+        """Parse a Cookie header value into a HAR cookies list."""
         simple_cookie = cookies.SimpleCookie()
-        cookiesList = []
+        cookiesList: List[Dict] = []
         if not cookiesText:
             return cookiesList
         try:
@@ -243,14 +398,15 @@ class HarLog(HarLogStructure):
         return cookiesList
 
     @staticmethod
-    def getCookiesText(headers_list):
+    def getCookiesText(headers_list: List[Dict]) -> str:
+        """Extract the raw Cookie header value from a headers list."""
         for item in headers_list:
             if item['name'] == 'cookie':
                 return item['value']
         return ''
 
     @staticmethod
-    def getDictValueByKey(dict_, key):
+    def getDictValueByKey(dict_: List[Dict], key: str) -> Optional[str]:
         """Return the first part (before ';') of a header value by name."""
         for item in dict_:
             if item['name'] == key:
@@ -258,7 +414,8 @@ class HarLog(HarLogStructure):
         return None
 
     @staticmethod
-    def getResourceType(extension):
+    def getResourceType(extension: str) -> str:
+        """Map a file extension to the HAR _resourceType label."""
         if extension in ('js',):
             return 'script'
         elif extension in ('css',):
@@ -273,18 +430,22 @@ class HarLog(HarLogStructure):
             return 'document'
 
     @staticmethod
-    def saveJsonFile(filename, data):
+    def saveJsonFile(filename, data: Dict) -> None:
         with open(filename, 'w', encoding='utf-8') as fp:
             json.dump(data, fp, indent=2, ensure_ascii=False)
 
     @staticmethod
-    def readFile(filename):
+    def readFile(filename) -> str:
         with open(filename, 'r', encoding='utf-8') as fp:
             return fp.read()
 
     # ── Request parsing ───────────────────────────────────────────────────────
 
-    def getRequestDict(self, item_request, item_url):
+    def getRequestDict(self, item_request: str, item_url: str) -> Tuple:
+        """
+        Decode a base64-encoded Burp request and return a tuple of all fields
+        needed by constructEntryRequest.
+        """
         raw = b64decode(item_request)
 
         if b'\r\n\r\n' not in raw:
@@ -308,11 +469,11 @@ class HarLog(HarLogStructure):
         request_headers     = self.getHeadersList(headers_items_split[1:])
         request_queryString = self.getQueryList(item_url)
         request_cookies     = self.getCookiesList(self.getCookiesText(request_headers))
-        request_headersSize = len(headers_items) + 4  # +4 for \r\n\r\n
+        request_headersSize = len(headers_items) + 4  # +4 for \r\n\r\n separator
         request_bodySize    = len(body)
 
-        # Build postData for requests with a body (e.g. POST, PUT, PATCH)
-        post_data = None
+        # Build postData for requests with a non-empty body (POST, PUT, PATCH, etc.)
+        post_data: Optional[Dict] = None
         if body:
             content_type = self.getDictValueByKey(request_headers, 'content-type') or ''
             post_data = {
@@ -326,8 +487,19 @@ class HarLog(HarLogStructure):
 
     # ── Response parsing ──────────────────────────────────────────────────────
 
-    def makeResponseContent(self, body, content_type, item_extension):
-        responseContent = {
+    def makeResponseContent(
+        self,
+        body: bytes,
+        content_type: Optional[str],
+        item_extension: Optional[str],
+    ) -> Dict:
+        """
+        Build the HAR 'content' object for a response body.
+
+        Text types are stored as UTF-8 strings; binary types are base64-encoded;
+        large media (video/audio) have their body omitted to avoid bloating the HAR.
+        """
+        responseContent: Dict = {
             'size':        len(body),
             'compression': 0,
         }
@@ -340,7 +512,6 @@ class HarLog(HarLogStructure):
         mime = content_type or self.ext_mime.get(item_extension, 'application/octet-stream')
         responseContent['mimeType'] = mime
 
-        # Decide how to encode the body
         if mime in self.plains:
             try:
                 responseContent['text'] = body.decode('utf-8')
@@ -354,7 +525,7 @@ class HarLog(HarLogStructure):
             responseContent['text']     = b64encode(body).decode('utf-8')
             responseContent['encoding'] = 'base64'
         elif mime.startswith('video/') or mime.startswith('audio/'):
-            # Large media: skip embedding body, record size only
+            # Large media: skip embedding the body, record size via comment only
             responseContent['comment'] = f'Body not embedded ({len(body)} bytes, {mime})'
         else:
             # Unknown type — try UTF-8, fall back to base64
@@ -366,10 +537,15 @@ class HarLog(HarLogStructure):
 
         return responseContent
 
-    def getResponseDict(self, item_response, item_extension):
-        # Missing response → synthesise a minimal 400 placeholder.
-        # ET.findtext() returns '' (empty str) for elements with no text,
-        # so we check for both None and empty string with a falsy check.
+    def getResponseDict(self, item_response: Optional[str], item_extension: str) -> Tuple:
+        """
+        Decode a base64-encoded Burp response and return a tuple of all fields
+        needed by constructEntryResponse.
+
+        Missing or empty responses (ET.findtext returns '' for empty elements)
+        are replaced with a synthetic HTTP/1.1 400 placeholder so the HAR entry
+        remains structurally valid.
+        """
         if not item_response:
             _warn("Response is missing — using synthetic 400 placeholder")
             item_response = b64encode(
@@ -414,100 +590,193 @@ class HarLog(HarLogStructure):
         return (data_status, data_statusText, data_httpVersion,
                 data_headers, data_content, data_headersSize, data_bodySize)
 
-    # ── Entry assembly ────────────────────────────────────────────────────────
+    # ── Entry assembly (streaming) ────────────────────────────────────────────
 
-    def get_entries(self, xml_text):
+    def get_entries(
+        self,
+        source: _Source,
+        filters: Optional[Dict] = None,
+        anonymize: bool = False,
+    ) -> Tuple[List[Dict], int, int]:
+        """
+        Stream-parse <item> elements from *source* using iterparse.
+
+        Items are processed one at a time.  After each item is handled,
+        ``root_elem.clear()`` frees its memory so the DOM never grows beyond
+        a single item, regardless of file size.
+
+        Filters are applied before the expensive base64 decode, so filtered
+        items incur almost no CPU cost.
+
+        Parameters
+        ----------
+        source    : file path (str / Path) or io.BytesIO wrapping xml_text
+        filters   : optional dict with keys 'host', 'method', 'status',
+                    each a list of normalised strings (already lowercased /
+                    uppercased by the caller)
+        anonymize : when True, redact sensitive headers and query params
+
+        Returns
+        -------
+        (entries, skipped, filtered_out)
+          entries      — list of converted HAR entry dicts
+          skipped      — items that failed to convert (missing request, errors)
+          filtered_out — items excluded by active filters
+        """
+        entries: List[Dict] = []
+        skipped      = 0
+        filtered_out = 0
+        item_count   = 0
+        root_elem    = None
+
+        # When source is BytesIO (pre-loaded xml_text), force UTF-8 parsing so
+        # any <?xml encoding="..."?> declaration in the original file is ignored.
+        if isinstance(source, io.BytesIO):
+            parser = ET.XMLParser(encoding='utf-8')
+        else:
+            parser = None  # let iterparse read the encoding declaration from file
+
         try:
-            root = ET.fromstring(xml_text)
-        except ET.ParseError as e:
-            print(f"[burp2har] ERROR: XML parse failed — {e}", file=sys.stderr)
-            raise
-
-        all_items = list(root.iter('item'))
-        _log(f"Found {len(all_items)} item(s) in XML")
-
-        entries = []
-        skipped = 0
-
-        for idx, item in enumerate(all_items):
-            url = item.findtext('url') or ''
-            try:
-                item_extension    = item.findtext('extension') or 'null'
-                item_url          = url
-                item_request      = item.findtext('request')
-                item_response     = item.findtext('response')
-                item_ip           = (
-                    item.find('host').attrib.get('ip')
-                    if item.find('host') is not None else None
-                )
-                item_time         = item.findtext('time') or ''
-
-                if not item_request:
-                    _warn(f"Item {idx} ({url}): missing request, skipping")
-                    skipped += 1
+            ctx = ET.iterparse(source, events=('start', 'end'), parser=parser)
+            for event, elem in ctx:
+                # Capture the root element on first 'start' event
+                if event == 'start' and root_elem is None:
+                    root_elem = elem
                     continue
 
-                if not item_response:
-                    _warn(f"Item {idx} ({url}): missing response — will use placeholder")
+                if event != 'end' or elem.tag != 'item':
+                    continue
 
-                entry_resourceType    = self.getResourceType(
-                    item_extension if item_extension != 'null' else ''
-                )
-                entry_request         = self.constructEntryRequest(
-                    *self.getRequestDict(item_request, item_url)
-                )
-                entry_response        = self.constructEntryResponse(
-                    *self.getResponseDict(item_response, item_extension)
-                )
-                entry_serverIPAddress = item_ip
-                entry_startedDateTime = HarTimeFormat().transBsToHarTime(item_time)
+                item_count += 1
+                url = elem.findtext('url') or ''
 
-                entry = self.constructEntry(
-                    entry_resourceType, entry_request, entry_response,
-                    entry_serverIPAddress, entry_startedDateTime,
-                )
-                entries.append(entry)
+                # ── Fast filter check (no base64 decode) ──────────────────────
+                if filters:
+                    item_host   = (elem.findtext('host')   or '').lower()
+                    item_method = (elem.findtext('method') or '').upper()
+                    item_status =  elem.findtext('status') or ''
+                    if not _passes_filter(item_host, item_method, item_status, filters):
+                        filtered_out += 1
+                        if root_elem is not None:
+                            root_elem.clear()
+                        continue
 
-            except Exception as e:
-                _warn(f"Item {idx} ({url}): unexpected error — {e!r}, skipping")
-                skipped += 1
-                continue
+                # ── Full processing ────────────────────────────────────────────
+                try:
+                    item_extension = elem.findtext('extension') or 'null'
+                    item_request   = elem.findtext('request')
+                    item_response  = elem.findtext('response')
+                    host_node      = elem.find('host')
+                    item_ip        = host_node.attrib.get('ip') if host_node is not None else None
+                    item_time      = elem.findtext('time') or ''
 
+                    if not item_request:
+                        _warn(f"Item {item_count} ({url}): missing request, skipping")
+                        skipped += 1
+                    else:
+                        if not item_response:
+                            _warn(f"Item {item_count} ({url}): missing response — will use placeholder")
+
+                        entry_resourceType = self.getResourceType(
+                            item_extension if item_extension != 'null' else ''
+                        )
+                        entry_request = self.constructEntryRequest(
+                            *self.getRequestDict(item_request, url)
+                        )
+                        entry_response = self.constructEntryResponse(
+                            *self.getResponseDict(item_response, item_extension)
+                        )
+                        entry = self.constructEntry(
+                            entry_resourceType,
+                            entry_request,
+                            entry_response,
+                            item_ip,
+                            HarTimeFormat().transBsToHarTime(item_time),
+                        )
+
+                        if anonymize:
+                            _apply_anonymization(entry)
+
+                        entries.append(entry)
+
+                except Exception as exc:
+                    _warn(f"Item {item_count} ({url}): unexpected error — {exc!r}, skipping")
+                    skipped += 1
+
+                finally:
+                    # Free the item from the in-memory tree regardless of outcome
+                    if root_elem is not None:
+                        root_elem.clear()
+
+        except ET.ParseError as exc:
+            print(f"[burp2har] ERROR: XML parse failed — {exc}", file=sys.stderr)
+            raise
+
+        filter_note = f" ({filtered_out} filtered out)" if filtered_out else ""
+        _log(f"Found {item_count} item(s) in XML{filter_note}")
         _log(
             f"Converted {len(entries)} entr{'y' if len(entries) == 1 else 'ies'} "
             f"({skipped} skipped)"
         )
-        return entries, skipped
+        return entries, skipped, filtered_out
 
     # ── Top-level ─────────────────────────────────────────────────────────────
 
-    def getHarLog(self, xml_text):
-        entries, skipped = self.get_entries(xml_text)
+    def getHarLog(
+        self,
+        source: _Source,
+        filters: Optional[Dict] = None,
+        anonymize: bool = False,
+    ) -> Tuple[Dict, int, int]:
+        """Build the full HAR log dict from *source*. Returns (har_log, skipped, filtered_out)."""
+        entries, skipped, filtered_out = self.get_entries(
+            source, filters=filters, anonymize=anonymize
+        )
         now = HarTimeFormat().getNowHarTime()
-        return self.constructHarLog(now, now, entries), skipped
+        return self.constructHarLog(now, now, entries), skipped, filtered_out
 
     def generate_har(
         self,
         xml_path,
         result_path,
-        xml_text: Optional[str] = None,
-    ) -> dict:
+        xml_text:  Optional[str]  = None,
+        filters:   Optional[Dict] = None,
+        anonymize: bool           = False,
+    ) -> Dict:
         """
-        Convert *xml_path* to a HAR file at *result_path*.
+        Convert *xml_path* to a HAR file written at *result_path*.
 
-        If *xml_text* is provided (e.g. already read by the CLI for validation),
-        the file is not read a second time.
+        Parameters
+        ----------
+        xml_path    : path to the Burp Suite XML export (used if xml_text is None)
+        result_path : destination .har file path
+        xml_text    : pre-read XML string — when provided the file is not re-read,
+                      and the string is wrapped in BytesIO for streaming iterparse
+        filters     : optional filter dict (see _passes_filter for schema)
+        anonymize   : when True, apply _apply_anonymization to each entry
 
-        Returns a dict with conversion stats: {'entries': int, 'skipped': int}.
+        Returns
+        -------
+        dict with keys: 'entries' (int), 'skipped' (int), 'filtered' (int)
         """
-        if xml_text is None:
-            _log(f"Reading XML: {xml_path}")
-            xml_text = self.readFile(xml_path)
-            _log(f"Loaded {len(xml_text):,} bytes")
+        if xml_text is not None:
+            # Wrap the pre-loaded string as BytesIO so iterparse can stream it
+            # without building a full DOM tree.
+            source: _Source = io.BytesIO(xml_text.encode('utf-8'))
+        else:
+            # Stream directly from disk — most memory-efficient for large files.
+            _log(f"Streaming XML from file: {xml_path}")
+            source = xml_path
 
-        har_log, skipped = self.getHarLog(xml_text)
+        har_log, skipped, filtered_out = self.getHarLog(
+            source, filters=filters, anonymize=anonymize
+        )
 
         self.saveJsonFile(result_path, har_log)
         _log(f"HAR written to: {result_path}")
 
-        return {"entries": len(har_log["log"]["entries"]), "skipped": skipped}
+        return {
+            "entries":  len(har_log["log"]["entries"]),
+            "skipped":  skipped,
+            "filtered": filtered_out,
+        }
