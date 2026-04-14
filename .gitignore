@@ -1,4 +1,4 @@
-# ── Python ────────────────────────────────────────────────────────────────────
+# ── Python ─────────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *.pyo
@@ -6,12 +6,14 @@ __pycache__/
 *.so
 *.egg
 *.egg-info/
-dist/
-build/
-wheels/
-.eggs/
 pip-wheel-metadata/
 MANIFEST
+.eggs/
+wheels/
+
+# ── Build and distribution ─────────────────────────────────────────────────────
+dist/
+build/
 
 # ── Virtual environments ───────────────────────────────────────────────────────
 venv/
@@ -20,7 +22,7 @@ env/
 .env/
 ENV/
 
-# ── Secrets and credentials ───────────────────────────────────────────────────
+# ── Secrets and credentials ────────────────────────────────────────────────────
 *.key
 *.pem
 *.p12
@@ -37,7 +39,8 @@ private/
 .env.*
 !.env.example
 
-# ── Security / pentest artifacts ──────────────────────────────────────────────
+# ── Security / pentest artifacts ───────────────────────────────────────────────
+# XML and HAR files are test data — never commit actual captures to the repo.
 *.xml
 *.har
 captures/
@@ -46,34 +49,42 @@ traffic/
 burp_exports/
 sessions/
 
-# ── Reports and analysis output ───────────────────────────────────────────────
+# ── Test fixtures (tracked exceptions go in tests/fixtures/ explicitly) ────────
+tests/*.xml
+tests/*.har
+
+# ── Reports and analysis ───────────────────────────────────────────────────────
 report.md
 reports/
 *.report
 *.log
 logs/
 
-# ── Claude Code ───────────────────────────────────────────────────────────────
+# ── Local tool state ───────────────────────────────────────────────────────────
+# ~/.burp2har/ lives in the home directory, not the project tree,
+# but add it here in case someone runs the tool from the repo root.
+.burp2har/
+
+# ── Claude Code ────────────────────────────────────────────────────────────────
 .claude/
 
-# ── IDE and editor files ──────────────────────────────────────────────────────
+# ── IDE and editor files ───────────────────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
+
+# ── OS-generated files ─────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
 
-# ── Testing ───────────────────────────────────────────────────────────────────
+# ── Testing and coverage ───────────────────────────────────────────────────────
 .pytest_cache/
 .coverage
 htmlcov/
 .tox/
 .mypy_cache/
 .ruff_cache/
-
-# ── Build folder  ───────────────────────────────────────────────────────────────────
-dist/
-build/
-*.egg-info/

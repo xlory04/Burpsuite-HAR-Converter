@@ -16,10 +16,10 @@ from .config import VERSION
 # ─── Logging helpers ──────────────────────────────────────────────────────────
 
 def _log(msg):
-    print(f"[bpi2har] {msg}", file=sys.stderr)
+    print(f"[burp2har] {msg}", file=sys.stderr)
 
 def _warn(msg):
-    print(f"[bpi2har] WARNING: {msg}", file=sys.stderr)
+    print(f"[burp2har] WARNING: {msg}", file=sys.stderr)
 
 
 # ─── Time helpers ─────────────────────────────────────────────────────────────
@@ -81,17 +81,17 @@ class HarLogStructure:
     def constructEntryResponse(self, data_status, data_statusText, data_httpVersion,
             data_headers, data_content, data_headersSize, data_bodySize):
         return {
-            'status':      data_status,
-            'statusText':  data_statusText,
-            'httpVersion': data_httpVersion,
-            'headers':     data_headers,
-            'cookies':     [],
-            'content':     data_content,
-            'redirectURL': '',
-            'headersSize': data_headersSize,
-            'bodySize':    data_bodySize,
+            'status':        data_status,
+            'statusText':    data_statusText,
+            'httpVersion':   data_httpVersion,
+            'headers':       data_headers,
+            'cookies':       [],
+            'content':       data_content,
+            'redirectURL':   '',
+            'headersSize':   data_headersSize,
+            'bodySize':      data_bodySize,
             '_transferSize': data_bodySize,
-            '_error': None,
+            '_error':        None,
         }
 
     def constructEntry(self, entry_resourceType, entry_request, entry_response,
@@ -119,15 +119,15 @@ class HarLogStructure:
             'log': {
                 'version': '1.2',
                 'creator': {
-                    'name':    'bpi2har',
+                    'name':    'burp2har',
                     'version': VERSION,
                 },
                 'pages': [
                     {
                         'startedDateTime': pages_startedDateTime,
-                        'id':    'page_1',
-                        'title': pages_title,
-                        'pageTimings': {},
+                        'id':              'page_1',
+                        'title':           pages_title,
+                        'pageTimings':     {},
                     }
                 ],
                 'entries': entries,
@@ -204,7 +204,6 @@ class HarLog(HarLogStructure):
             # maxsplit=1 prevents truncating values that contain ': '
             parts = headers_item.split(b': ', 1)
             if len(parts) < 2:
-                # header line without a ': ' separator — skip silently
                 _warn(f"Skipping malformed header line: {headers_item[:80]!r}")
                 continue
             headers_dict.append({
@@ -349,7 +348,9 @@ class HarLog(HarLogStructure):
                 # Fallback to base64 for mis-labelled binary content
                 responseContent['text']     = b64encode(body).decode('utf-8')
                 responseContent['encoding'] = 'base64'
-        elif mime in self.binaries or (item_extension and item_extension in ('png', 'gif', 'jpg', 'jpeg', 'ico', 'pdf')):
+        elif mime in self.binaries or (
+            item_extension and item_extension in ('png', 'gif', 'jpg', 'jpeg', 'ico', 'pdf')
+        ):
             responseContent['text']     = b64encode(body).decode('utf-8')
             responseContent['encoding'] = 'base64'
         elif mime.startswith('video/') or mime.startswith('audio/'):
@@ -366,9 +367,9 @@ class HarLog(HarLogStructure):
         return responseContent
 
     def getResponseDict(self, item_response, item_extension):
-        # Missing response → synthesise a minimal 400 placeholder
-        # Note: ET.findtext() returns '' (empty str) for elements with no text,
-        # so we must check for both None and empty string here.
+        # Missing response → synthesise a minimal 400 placeholder.
+        # ET.findtext() returns '' (empty str) for elements with no text,
+        # so we check for both None and empty string with a falsy check.
         if not item_response:
             _warn("Response is missing — using synthetic 400 placeholder")
             item_response = b64encode(
@@ -419,7 +420,7 @@ class HarLog(HarLogStructure):
         try:
             root = ET.fromstring(xml_text)
         except ET.ParseError as e:
-            print(f"[bpi2har] ERROR: XML parse failed — {e}", file=sys.stderr)
+            print(f"[burp2har] ERROR: XML parse failed — {e}", file=sys.stderr)
             raise
 
         all_items = list(root.iter('item'))
@@ -435,7 +436,10 @@ class HarLog(HarLogStructure):
                 item_url          = url
                 item_request      = item.findtext('request')
                 item_response     = item.findtext('response')
-                item_ip           = item.find('host').attrib.get('ip') if item.find('host') is not None else None
+                item_ip           = (
+                    item.find('host').attrib.get('ip')
+                    if item.find('host') is not None else None
+                )
                 item_time         = item.findtext('time') or ''
 
                 if not item_request:
@@ -446,9 +450,15 @@ class HarLog(HarLogStructure):
                 if not item_response:
                     _warn(f"Item {idx} ({url}): missing response — will use placeholder")
 
-                entry_resourceType    = self.getResourceType(item_extension if item_extension != 'null' else '')
-                entry_request         = self.constructEntryRequest(*self.getRequestDict(item_request, item_url))
-                entry_response        = self.constructEntryResponse(*self.getResponseDict(item_response, item_extension))
+                entry_resourceType    = self.getResourceType(
+                    item_extension if item_extension != 'null' else ''
+                )
+                entry_request         = self.constructEntryRequest(
+                    *self.getRequestDict(item_request, item_url)
+                )
+                entry_response        = self.constructEntryResponse(
+                    *self.getResponseDict(item_response, item_extension)
+                )
                 entry_serverIPAddress = item_ip
                 entry_startedDateTime = HarTimeFormat().transBsToHarTime(item_time)
 
@@ -463,8 +473,10 @@ class HarLog(HarLogStructure):
                 skipped += 1
                 continue
 
-        _log(f"Converted {len(entries)} entr{'y' if len(entries)==1 else 'ies'} "
-             f"({skipped} skipped)")
+        _log(
+            f"Converted {len(entries)} entr{'y' if len(entries) == 1 else 'ies'} "
+            f"({skipped} skipped)"
+        )
         return entries, skipped
 
     # ── Top-level ─────────────────────────────────────────────────────────────

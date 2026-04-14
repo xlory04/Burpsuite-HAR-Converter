@@ -1,13 +1,14 @@
 """
 XML compatibility validator for Burp Suite export files.
 
-Distinguishes three failure modes so the CLI can give actionable feedback:
-  - MALFORMED          : XML that cannot be parsed at all
-  - INCOMPATIBLE       : valid XML that lacks the expected Burp structure
-  - PARTIALLY_COMPATIBLE : items present but missing required sub-elements
-  - COMPATIBLE         : structure looks correct, conversion can proceed
-"""
+Distinguishes four states so the CLI can give actionable, targeted feedback:
 
+  MALFORMED            : file cannot be parsed as XML at all
+  INCOMPATIBLE         : valid XML that lacks the expected Burp structure,
+                         or every <item> is missing all required fields
+  PARTIALLY_COMPATIBLE : structure is present but some items are incomplete
+  COMPATIBLE           : structure looks correct — conversion can proceed
+"""
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
@@ -17,29 +18,30 @@ from typing import List
 
 
 class CompatibilityStatus(Enum):
-    COMPATIBLE             = "compatible"
-    PARTIALLY_COMPATIBLE   = "partially_compatible"
-    INCOMPATIBLE           = "incompatible"
-    MALFORMED              = "malformed"
+    COMPATIBLE           = "compatible"
+    PARTIALLY_COMPATIBLE = "partially_compatible"
+    INCOMPATIBLE         = "incompatible"
+    MALFORMED            = "malformed"
 
 
 @dataclass
 class ValidationResult:
-    status:     CompatibilityStatus
-    message:    str = ""
-    item_count: int = 0
+    status:      CompatibilityStatus
+    message:     str = ""
+    item_count:  int = 0
     valid_count: int = 0
-    warnings:   List[str] = field(default_factory=list)
+    warnings:    List[str] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
+        """True when conversion can proceed (compatible or partially compatible)."""
         return self.status in (
             CompatibilityStatus.COMPATIBLE,
             CompatibilityStatus.PARTIALLY_COMPATIBLE,
         )
 
 
-# Required sub-elements that every valid Burp item must expose
+# Minimum sub-elements that every usable Burp item must have
 _REQUIRED_FIELDS = ("url", "request")
 
 
@@ -48,8 +50,9 @@ def validate_xml(xml_text: str) -> ValidationResult:
     Validate a Burp Suite XML export string and return a ValidationResult.
 
     The check is intentionally lightweight — it does not decode base64 bodies
-    or deep-parse HTTP.  Its sole purpose is to detect structural mismatches
-    early, before the converter tries to process thousands of entries.
+    or deep-parse HTTP messages. Its sole purpose is to detect structural
+    mismatches early, before the converter iterates over potentially thousands
+    of entries.
     """
 
     # ── Step 1: basic XML parse ───────────────────────────────────────────────
@@ -58,7 +61,7 @@ def validate_xml(xml_text: str) -> ValidationResult:
     except ET.ParseError as exc:
         return ValidationResult(
             status=CompatibilityStatus.MALFORMED,
-            message=f"XML malformato — {exc}",
+            message=f"XML is malformed — {exc}",
         )
 
     # ── Step 2: locate <item> elements ───────────────────────────────────────
@@ -67,13 +70,12 @@ def validate_xml(xml_text: str) -> ValidationResult:
         return ValidationResult(
             status=CompatibilityStatus.INCOMPATIBLE,
             message=(
-                "Nessun elemento <item> trovato nel documento XML. "
-                "Il formato XML esportato da Burp Suite non è compatibile "
-                "con questa versione del converter."
+                "No <item> elements found in the document. "
+                "This does not appear to be a Burp Suite XML export."
             ),
         )
 
-    # ── Step 3: inspect item structure ───────────────────────────────────────
+    # ── Step 3: inspect each item for required fields ─────────────────────────
     valid_count   = 0
     partial_count = 0
     warnings: List[str] = []
@@ -84,21 +86,20 @@ def validate_xml(xml_text: str) -> ValidationResult:
             valid_count += 1
         elif len(missing) < len(_REQUIRED_FIELDS):
             partial_count += 1
-            warnings.append(
-                f"Item {idx}: campo/i mancante/i: {', '.join(missing)}"
-            )
-        # else: totally empty item — counted below
+            warnings.append(f"Item {idx}: missing field(s): {', '.join(missing)}")
+        # else: item is completely empty — counted as broken below
 
-    total = len(items)
+    total  = len(items)
     broken = total - valid_count - partial_count
 
     if valid_count == 0 and partial_count == 0:
         return ValidationResult(
             status=CompatibilityStatus.INCOMPATIBLE,
             message=(
-                f"Trovati {total} elementi <item> ma nessuno contiene "
-                f"i campi attesi ({', '.join(_REQUIRED_FIELDS)}). "
-                "Il formato XML non è compatibile con questa versione del converter."
+                f"Found {total} <item> element(s) but none contain the expected "
+                f"fields ({', '.join(_REQUIRED_FIELDS)}). "
+                "The XML format is not compatible with this version of the converter. "
+                "Burp Suite may have updated its export format."
             ),
             item_count=total,
         )
@@ -107,8 +108,8 @@ def validate_xml(xml_text: str) -> ValidationResult:
         return ValidationResult(
             status=CompatibilityStatus.PARTIALLY_COMPATIBLE,
             message=(
-                f"{partial_count}/{total} item parzialmente compatibili, "
-                "nessuno completamente valido."
+                f"{partial_count}/{total} items are partially compatible — "
+                "none are fully valid."
             ),
             item_count=total,
             valid_count=0,
@@ -117,12 +118,12 @@ def validate_xml(xml_text: str) -> ValidationResult:
 
     if partial_count > 0 or broken > 0:
         if broken:
-            warnings.append(f"{broken} item privi di qualsiasi campo riconosciuto.")
+            warnings.append(f"{broken} item(s) contain no recognized fields.")
         return ValidationResult(
             status=CompatibilityStatus.PARTIALLY_COMPATIBLE,
             message=(
-                f"{valid_count}/{total} item completamente validi, "
-                f"{partial_count} parziali, {broken} ignorati."
+                f"{valid_count}/{total} items fully valid, "
+                f"{partial_count} partial, {broken} unrecognized."
             ),
             item_count=total,
             valid_count=valid_count,
@@ -131,7 +132,7 @@ def validate_xml(xml_text: str) -> ValidationResult:
 
     return ValidationResult(
         status=CompatibilityStatus.COMPATIBLE,
-        message=f"{total} item trovati, tutti validi.",
+        message=f"{total} items found, all valid.",
         item_count=total,
         valid_count=valid_count,
     )
