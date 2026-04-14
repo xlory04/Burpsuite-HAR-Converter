@@ -1,0 +1,27 @@
+[tool.poetry]
+name = "burp2har"
+version = "0.2.0"
+description = "Convert Burp Suite XML exports to HAR format"
+authors = ["Lorenzo Surico"]
+license = "MIT"
+readme = "readme.md"
+homepage = "https://github.com/xlory04/BurpSuite-HAR-Exporter"
+repository = "https://github.com/xlory04/BurpSuite-HAR-Exporter"
+keywords = ["burpsuite", "har", "xml", "converter", "pentesting", "security"]
+packages = [{include = "burp2har"}]
+
+# Original project: https://github.com/JoryPein/BurpSuite-HAR-Exporter (MIT License)
+
+[tool.poetry.dependencies]
+python  = "^3.8"
+typer   = ">=0.9.0"
+rich    = ">=10.0.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+
+[tool.poetry.scripts]
+burp2har = "burp2har.cli:run"
