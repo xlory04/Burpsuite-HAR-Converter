@@ -1,30 +1,27 @@
-# BurpSuite-HAR-Exporter
+# burp2har
 
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-0.2.0-orange.svg)](https://github.com/JoryPein/BurpSuite-HAR-Exporter/releases)
+[![Version](https://img.shields.io/badge/version-0.3.0-orange.svg)](https://github.com/xlory04/Burpsuite-HAR-Converter/releases)
 
-**BurpSuite-HAR-Exporter** (`bpi2har`) is a command-line tool that converts HTTP traffic exported from Burp Suite (XML format) into the standard **HAR** (HTTP Archive) format.
+**burp2har** is a command-line tool that converts HTTP traffic exported from Burp Suite (XML format) into the standard **HAR** (HTTP Archive) format.
+
+---
 
 ## Table of Contents
 
 - [What is this?](#what-is-this)
+- [Features](#features)
 - [Requirements](#requirements)
 - [Installation](#installation)
-  - [Windows](#windows)
-  - [Linux](#linux)
-  - [macOS](#macos)
 - [Exporting from Burp Suite](#exporting-from-burp-suite)
 - [Usage](#usage)
-- [Options](#options)
 - [Examples](#examples)
-- [Output](#output)
-- [XML Compatibility](#xml-compatibility)
+- [Update System](#update-system)
 - [Troubleshooting](#troubleshooting)
 - [Project Structure](#project-structure)
 - [Differences from Original Project](#differences-from-original-project)
 - [Credits](#credits)
-- [Contributing](#contributing)
 - [License](#license)
 
 ---
@@ -35,7 +32,7 @@ Burp Suite (Professional and Community) lets you export captured HTTP requests a
 
 Many analysis tools (browser DevTools importers, performance analyzers, security scanners, Postman, Insomnia, mitmproxy, etc.) work with the **HAR** format — not with Burp's proprietary XML.
 
-`bpi2har` bridges that gap: it reads the Burp XML export and produces a valid `.har` file that any HAR-compatible tool can open.
+`burp2har` bridges that gap: it reads the Burp XML export and produces a valid `.har` file that any HAR-compatible tool can open.
 
 **Typical use cases:**
 
@@ -43,6 +40,24 @@ Many analysis tools (browser DevTools importers, performance analyzers, security
 - Feeding captured traffic into performance analysis tools
 - Sharing traffic captures in a tool-agnostic format
 - Integrating Burp captures into automated pipelines or CI security checks
+
+---
+
+## Features
+
+| Feature | Description |
+|---|---|
+| **convert** | Convert Burp XML → HAR with a progress summary |
+| **validate** | Pre-flight XML compatibility check without conversion |
+| **info** | Inspect a Burp export: methods, hosts, status codes, MIME types |
+| **update** | Check GitHub for a newer version and install it interactively |
+| **help** | Detailed user guide with examples |
+| **Shorthand** | `burp2har file.xml` works as a shortcut for `burp2har convert file.xml` |
+| **First-run check** | Silently checks for updates on first execution |
+| **Offline safe** | All network operations are optional and fail gracefully |
+| **Encoding fallback** | UTF-8 with automatic latin-1 fallback for non-standard exports |
+| **Format detection** | Distinguishes malformed XML, incompatible XML, and partial exports |
+| **Rich output** | Colored, structured terminal output (falls back to plain text if Rich is unavailable) |
 
 ---
 
@@ -57,7 +72,7 @@ Many analysis tools (browser DevTools importers, performance analyzers, security
 
 **Operating systems:** Windows 10/11, Linux (any distribution), macOS 12+
 
-No internet connection is required for normal operation. An optional `--check-updates` flag queries the GitHub releases API only when explicitly requested.
+No internet connection is required for normal operation. An optional `burp2har update` command and `--check-updates` flag query the GitHub releases API only when explicitly requested.
 
 ---
 
@@ -70,8 +85,7 @@ No internet connection is required for normal operation. An optional `--check-up
 Download from [python.org/downloads](https://www.python.org/downloads/).
 During installation, check **"Add Python to PATH"**.
 
-Verify the installation:
-
+Verify:
 ```cmd
 python --version
 ```
@@ -83,24 +97,24 @@ python -m venv venv
 venv\Scripts\activate
 ```
 
-**3. Install bpi2har**
+**3. Install burp2har**
 
+From source (recommended — always gets the latest code):
 ```cmd
-pip install bpi2har
+pip install git+https://github.com/xlory04/Burpsuite-HAR-Converter.git
 ```
 
-Or install directly from source:
-
+Or clone and install locally:
 ```cmd
-git clone https://github.com/xlory04/BurpSuite-HAR-Exporter.git
-cd BurpSuite-HAR-Exporter
+git clone https://github.com/xlory04/Burpsuite-HAR-Converter.git
+cd Burpsuite-HAR-Converter
 pip install .
 ```
 
 **4. Verify**
 
 ```cmd
-bpi2har --help
+burp2har --version
 ```
 
 ---
@@ -110,13 +124,11 @@ bpi2har --help
 **1. Install Python 3.8+**
 
 Debian / Ubuntu:
-
 ```bash
 sudo apt update && sudo apt install python3 python3-pip python3-venv
 ```
 
 Fedora / RHEL / CentOS:
-
 ```bash
 sudo dnf install python3 python3-pip
 ```
@@ -128,24 +140,23 @@ python3 -m venv venv
 source venv/bin/activate
 ```
 
-**3. Install bpi2har**
+**3. Install burp2har**
 
 ```bash
-pip install bpi2har
+pip install git+https://github.com/xlory04/Burpsuite-HAR-Converter.git
 ```
 
 Or from source:
-
 ```bash
-git clone https://github.com/xlory04/BurpSuite-HAR-Exporter.git
-cd BurpSuite-HAR-Exporter
+git clone https://github.com/xlory04/Burpsuite-HAR-Converter.git
+cd Burpsuite-HAR-Converter
 pip install .
 ```
 
 **4. Verify**
 
 ```bash
-bpi2har --help
+burp2har --version
 ```
 
 ---
@@ -167,24 +178,16 @@ python3 -m venv venv
 source venv/bin/activate
 ```
 
-**3. Install bpi2har**
+**3. Install burp2har**
 
 ```bash
-pip install bpi2har
-```
-
-Or from source:
-
-```bash
-git clone https://github.com/xlory04/BurpSuite-HAR-Exporter.git
-cd BurpSuite-HAR-Exporter
-pip install .
+pip install git+https://github.com/xlory04/Burpsuite-HAR-Converter.git
 ```
 
 **4. Verify**
 
 ```bash
-bpi2har --help
+burp2har --version
 ```
 
 ---
@@ -194,319 +197,367 @@ bpi2har --help
 1. Open **Burp Suite** and navigate to **Proxy → HTTP history** (or **Target → Site map**).
 2. Select the requests you want to export (use `Ctrl+A` to select all).
 3. Right-click → **Save items**.
-4. In the dialog, ensure the format is set to **XML** and save the file (e.g. `burp_export.xml`).
+4. In the dialog, ensure the format is set to **XML** and save the file (e.g. `export.xml`).
 
-> **Note:** The exported XML contains base64-encoded request and response bodies. `bpi2har` decodes these automatically.
+> The exported XML contains base64-encoded request and response bodies. `burp2har` decodes these automatically.
 
 ---
 
 ## Usage
 
-```bash
-# Basic usage — output file is placed next to the input file
-bpi2har burp_export.xml
+### convert
 
-# Specify a custom output path
-bpi2har burp_export.xml --output /path/to/output.har
-
-# Run as a Python module (no installation required)
-python -m bpi2har.cli burp_export.xml
-
-# Check for updates before converting
-bpi2har burp_export.xml --check-updates
-
-# Silent update check — only prints if a new version exists
-bpi2har burp_export.xml --auto-check-updates
-
-# Verbose mode — shows full stack trace on errors
-bpi2har burp_export.xml --verbose
-```
-
-### Getting help
-
-There are two help commands with different purposes:
+Convert a Burp Suite XML export to HAR format.
 
 ```bash
-# Typer's auto-generated flag — terse option list
-bpi2har --help
-
-# Full user-friendly guide with examples and notes
-bpi2har help
+burp2har convert export.xml
+burp2har convert export.xml --output /path/to/output.har
+burp2har convert export.xml --verbose
+burp2har convert export.xml --check-updates
 ```
 
-`bpi2har help` prints:
-- What the tool does and its input/output
-- All available options with descriptions
-- Practical examples (Linux, macOS, Windows)
-- Important notes and links
+Options:
+
+| Option | Short | Description | Default |
+|---|---|---|---|
+| `--output PATH` | `-o` | Destination `.har` file | Same directory as input, `.har` extension |
+| `--check-updates` | | Verbose update check before converting | off |
+| `--auto-check-updates` | | Silent update check — warns only if newer | off |
+| `--verbose` | `-v` | Show full stack trace on errors | off |
 
 ---
 
-## Options
+### validate
 
-| Flag / Argument | Short | Description | Default |
-|---|---|---|---|
-| `<filename>` | | Path to the Burp Suite XML export file | *(required)* |
-| `--output PATH` | `-o` | Destination `.har` file path | Same directory as input, `.har` extension |
-| `--check-updates` | | Query GitHub releases API for a newer version | `False` |
-| `--auto-check-updates` | | Silent update check — only warns if a newer version exists | `False` |
-| `--verbose` | `-v` | Print full stack trace on conversion errors | `False` |
-| `--help` | | Show Typer's terse help and exit | |
-| `help` | | Show the full user-friendly guide and exit | |
+Validate a Burp Suite XML export without converting it.
 
-### `--check-updates` vs `--auto-check-updates`
+```bash
+burp2har validate export.xml
+```
 
-| Flag | Prints when up-to-date | Prints when update available | Prints on network error |
-|---|---|---|---|
-| `--check-updates` | ✓ (confirms version) | ✓ (shows new version) | ✓ (shows warning) |
-| `--auto-check-updates` | silent | ✓ (shows new version) | silent |
+Outputs one of:
+- `✓ COMPATIBLE` — file is ready to convert
+- `! PARTIALLY COMPATIBLE` — some items may be skipped during conversion
+- `✗ INCOMPATIBLE` — valid XML but not a Burp Suite export, or format has changed
+- `✗ MALFORMED` — file cannot be parsed as XML
 
-`--auto-check-updates` is designed for use in shell aliases or scripts where you want to be notified of updates passively without cluttering the output on every run.
+Exit codes: `0` = compatible/partial, `2` = incompatible/malformed.
+
+---
+
+### info
+
+Show metadata and statistics from a Burp Suite XML export without converting.
+
+```bash
+burp2har info export.xml
+```
+
+Shows:
+- File size and item count
+- HTTP methods breakdown
+- Response status codes
+- Protocols (http / https)
+- Unique hosts (top 15)
+- MIME types
+
+---
+
+### update
+
+Check for a newer version of `burp2har` on GitHub and install it interactively.
+
+```bash
+burp2har update
+```
+
+Behavior:
+1. Queries the GitHub releases API
+2. If a newer version exists, shows current and latest version
+3. Asks for confirmation before installing
+4. Runs `pip install --upgrade git+<repo>` in the active Python environment
+5. If offline or the API is unavailable, reports the error and exits cleanly
+
+---
+
+### help
+
+Show the full user guide.
+
+```bash
+burp2har help
+burp2har --help   # terse Typer option list
+```
+
+---
+
+### Shorthand
+
+If the first argument looks like a file path (not a subcommand), `burp2har` treats it as `convert`:
+
+```bash
+burp2har export.xml
+# equivalent to:
+burp2har convert export.xml
+```
+
+---
+
+### Run without installing
+
+```bash
+python -m burp2har.cli convert export.xml
+python -m burp2har.cli validate export.xml
+python -m burp2har.cli info export.xml
+```
 
 ---
 
 ## Examples
 
-**Convert a single export:**
-
-```bash
-bpi2har burp_export.xml
-# Output: burp_export.har (same directory)
-```
-
-**Specify output path:**
-
-```bash
-bpi2har /home/user/captures/session.xml --output /tmp/session.har
-```
-
-**Windows:**
-
-```cmd
-bpi2har C:\captures\burp_export.xml -o C:\captures\traffic.har
-```
-
-**Check for updates:**
-
-```bash
-bpi2har burp_export.xml --check-updates
-```
-
-**Silent update check (useful in aliases):**
-
-```bash
-bpi2har burp_export.xml --auto-check-updates
-```
-
-**Show the user-friendly guide:**
-
-```bash
-bpi2har help
-```
-
-**Run without installing (from the repo root):**
-
-```bash
-python -m bpi2har.cli burp_export.xml
-```
-
-**Expected terminal output (conversion):**
+### Basic conversion
 
 ```
-  BurpSuite-HAR-Exporter  v0.2.0
+$ burp2har convert export.xml
+
+  BurpSuite HAR Converter  v0.3.0
   ────────────────────────────────────────────
 
-  ► Verifica file di input
-    ✓  File trovato: burp_export.xml  (142,318 byte)
+  ► Checking input file
+    ✓  Found: export.xml  (75,328,782 bytes)
 
-  ► Validazione formato XML
-    ✓  Formato compatibile — 237 item trovati
+  ► Validating XML format
+    ✓  Compatible — 238 items found
 
-  ► Conversione XML → HAR
-    Input:  burp_export.xml
-    Output: burp_export.har
+  ► Converting XML → HAR
+    Input:  export.xml
+    Output: export.har
   ────────────────────────────────────────────
 
-  Conversione completata.
-  Output HAR: burp_export.har
-  Richieste elaborate: 231  |  Ignorate: 6
+  Conversion complete.
+  Output: export.har
+  Converted: 238  |  Skipped: 0
 ```
 
-**Expected output of `bpi2har help`:**
+### Validate
 
 ```
-╭─────────────────────────────────────────────────────╮
-│  BurpSuite-HAR-Exporter  v0.2.0                     │
-│                                                     │
-│  Converte file XML esportati da Burp Suite nel      │
-│  formato HAR (HTTP Archive).                        │
-╰─────────────────────────────────────────────────────╯
+$ burp2har validate export.xml
 
-USO BASE
-  bpi2har <file.xml>
+  BurpSuite HAR Converter  v0.3.0
+  ────────────────────────────────────────────
 
-OPZIONI
-  Opzione / Argomento     Tipo  Descrizione                            Default
-  ─────────────────────────────────────────────────────────────────────────────
-  <file.xml>              PATH  File XML di Burp Suite (richiesto)     —
-  --output  -o            PATH  Percorso del file .har di output       stessa dir, .har
-  --check-updates         flag  Controlla aggiornamenti disponibili    off
-  --auto-check-updates    flag  Silenzioso: avvisa solo se c'è update  off
-  --verbose  -v           flag  Stack trace completo in caso di errore off
-  --help                  flag  Help sintetico Typer ed esci           —
-  help                    cmd   Questa guida dettagliata ed esci       —
-
-ESEMPI
-  Conversione base:
-    bpi2har burp_export.xml
-
-  Output personalizzato:
-    bpi2har session.xml -o /tmp/session.har
-  ...
-
-NOTE IMPORTANTI
-  • L'output .har viene salvato nella stessa dir del file di input (se ometti -o)
-  • Il file di input deve essere XML da Burp (Proxy → HTTP history → Save items)
-  • Se il formato XML non è compatibile, controlla:
-    https://github.com/xlory04/BurpSuite-HAR-Exporter/releases
+  ► Validation result
+    ✓ COMPATIBLE  —  238 items found, all valid.
 ```
 
----
-
-## Output
-
-The tool produces a single `.har` file containing:
-
-- All captured HTTP requests (method, URL, headers, body, query string, cookies)
-- All captured HTTP responses (status, headers, content — plain text or base64 for binary)
-- Server IP addresses (when present in the Burp export)
-- Timestamps derived from Burp's export metadata
-
-The HAR file follows the [HAR 1.2 specification](http://www.softwareishard.com/blog/har-12-spec/) and can be imported by:
-
-- Chrome / Firefox DevTools (`Network → Import HAR`)
-- [HAR Analyzer](https://toolbox.googleapps.com/apps/har_analyzer/)
-- Postman, Insomnia
-- mitmproxy, Charles Proxy
-- Any other HAR-compatible tool
-
----
-
-## XML Compatibility
-
-`bpi2har` validates the XML structure before conversion and reports three distinct failure modes:
-
-### Malformed XML
-
-The file cannot be parsed as XML at all (truncated file, encoding issue, etc.).
+### Info
 
 ```
-  ✗  ERRORE: Il file XML è malformato e non può essere elaborato.
-     Dettaglio tecnico: XML malformato — syntax error: line 1, col 0
+$ burp2har info export.xml
+
+  BurpSuite HAR Converter  v0.3.0
+  ────────────────────────────────────────────
+
+  ► File
+    ✓  Path          : export.xml
+    ✓  Size          : 75,328,782 bytes  (71.8 MB)
+    ✓  Total items   : 238
+    ✓  Compatibility : compatible
+
+  ► HTTP Methods
+    GET             192
+    POST             41
+    HEAD              3
+    OPTIONS           2
+
+  ► Response Status Codes
+    200             151
+    206              37
+    302              10
+    204               4
+    400              36
+
+  ► Protocols
+    https           238
+
+  ► Hosts  (12 unique)
+    example.com                                    45 reqs
+    api.example.com                                38 reqs
+    ...
 ```
 
-**Fix:** Re-export the file from Burp Suite. If the file is large, ensure disk space was sufficient during export.
+### Update
+
+```
+$ burp2har update
+
+  BurpSuite HAR Converter  v0.3.0
+  ────────────────────────────────────────────
+
+  ► Checking for updates
+  ╭─ Update Available ──────────────────────────────────╮
+  │ Current version : v0.3.0                            │
+  │ Latest version  : v0.4.0                            │
+  │ Release page    : https://github.com/...            │
+  ╰─────────────────────────────────────────────────────╯
+  Install the update now? [Y/n]: y
+
+  ► Installing update
+  Running: pip install --upgrade git+https://github.com/...
+    ✓  Update installed successfully.
+
+  Restart your shell or run 'burp2har --version' to confirm.
+```
 
 ### Incompatible XML
 
-The XML is valid but does not contain the expected Burp structure (e.g. wrong file type, or Burp changed its export format in a future version).
-
 ```
-  ✗  ERRORE: Il formato XML esportato da Burp Suite non è compatibile con questa versione del converter.
-     E' possibile che Burp abbia aggiornato il formato di esportazione XML.
-     Controlla l'ultima versione disponibile qui: https://github.com/JoryPein/BurpSuite-HAR-Exporter/releases
+$ burp2har convert old_export.xml
+
+  ✗  ERROR: The XML format exported from Burp Suite is not compatible with this version.
+     Burp Suite may have updated its XML export format.
+     Check the latest release here: https://github.com/xlory04/Burpsuite-HAR-Converter/releases
 ```
 
-**Fix:** Check if a newer version of `bpi2har` is available (`--check-updates`). If you are on the latest version and the issue persists, please [open an issue](https://github.com/JoryPein/BurpSuite-HAR-Exporter/issues) with a sanitised sample of the XML.
+---
 
-### Partially compatible XML
+## Update System
 
-The XML has the expected structure but some items are missing required fields. Conversion proceeds; incomplete items are skipped.
+### First-run check
 
+On the **first execution** of `burp2har`, the tool silently checks GitHub for a newer version. If one is found, a notice is printed before the command output. If the check fails (offline, API unavailable), it is silently skipped and the command proceeds normally.
+
+The first-run state is stored in `~/.burp2har/initialized` — a plain empty marker file with no sensitive data.
+
+### Manual update
+
+Run `burp2har update` at any time. The command:
+1. Checks the GitHub releases API (requires internet access)
+2. Compares against the installed version
+3. Prompts for confirmation before making any changes
+4. Runs `pip install --upgrade git+<repo>` if confirmed
+
+### Fallback scripts
+
+If the CLI update command is unavailable (e.g. broken install), use the scripts in `scripts/`:
+
+**Windows:**
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\update_windows.ps1
 ```
-    !  WARN: Formato parzialmente compatibile: 180/200 item completamente validi, 20 parziali, 0 ignorati.
+
+**Linux / macOS:**
+```bash
+bash scripts/update_unix.sh
 ```
+
+### Offline behavior
+
+All update-related operations fail gracefully without breaking the tool:
+- The first-run check is silently skipped when offline
+- `--check-updates` prints a warning and continues with conversion
+- `--auto-check-updates` is completely silent on failure
+- `burp2har update` prints an error and exits with code 1
+
+Conversion, validation, and `info` always work without internet access.
 
 ---
 
 ## Troubleshooting
 
-**`bpi2har: command not found`**
+**`burp2har: command not found`**
 
 The package is not on your PATH. Either:
 - Activate your virtual environment: `source venv/bin/activate` (Linux/macOS) or `venv\Scripts\activate` (Windows)
-- Or run as a module: `python -m bpi2har.cli <file.xml>`
+- Or run as a module: `python -m burp2har.cli <subcommand> <file.xml>`
 
 **`UnicodeDecodeError` when reading the XML**
 
-The XML file may use a non-UTF-8 encoding. `bpi2har` attempts a latin-1 fallback automatically. If it still fails, convert the file first:
-
+`burp2har` automatically tries latin-1 if UTF-8 fails. If both fail, convert the file first:
 ```bash
-iconv -f <source-encoding> -t utf-8 burp_export.xml -o burp_export_utf8.xml
+iconv -f <source-encoding> -t utf-8 export.xml -o export_utf8.xml
 ```
 
 **Items are missing from the HAR output**
 
-Some items may have been skipped. Run with `--verbose` to see per-item warnings in the terminal. Common causes:
-- The request or response body was not base64-encoded correctly by Burp
-- The request line was malformed (unusual HTTP method, non-standard version string)
+Run `burp2har validate export.xml` first to check compatibility. Then run `burp2har convert export.xml --verbose` to see per-item warnings. Common causes:
+- The request body was not base64-encoded correctly by Burp
+- The request line was malformed (unusual HTTP method or non-standard version string)
 
-**The HAR file is not valid JSON**
+**The XML format is reported as incompatible**
 
-This should not happen. If it does, please [open an issue](https://github.com/JoryPein/BurpSuite-HAR-Exporter/issues) with the XML that caused it.
+Burp Suite occasionally updates its XML export format. Run `burp2har update` to install the latest version of the converter.
 
-**`--check-updates` always reports an error**
+**`burp2har update` fails**
 
-The tool requires outbound HTTPS to `api.github.com`. If you are on a restricted network, this check will fail gracefully and conversion will proceed normally.
+If pip cannot install from the git URL, use the fallback scripts or install manually:
+```bash
+pip install git+https://github.com/xlory04/Burpsuite-HAR-Converter.git
+```
+
+**Windows: `ExecutionPolicy` error when running the PowerShell script**
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+**`--check-updates` always reports a connection error**
+
+The tool requires outbound HTTPS to `api.github.com`. If you are on a restricted network, the check fails gracefully and conversion proceeds normally.
 
 ---
 
 ## Project Structure
 
 ```
-BurpSuite-HAR-Exporter/
-├── bpi2har/
-│   ├── __init__.py      # Exposes __version__
-│   ├── config.py        # Centralized version, project URL, API endpoints
-│   ├── validator.py     # XML structure validation (pre-flight check)
-│   ├── harlog.py        # XML parsing and HAR structure construction
-│   ├── functions.py     # Public API entry point
-│   ├── updater.py       # Optional update checker (stdlib only, no extra deps)
-│   └── cli.py           # Typer CLI — argument parsing and user output
+Burpsuite-HAR-Converter/
+├── burp2har/
+│   ├── __init__.py       — exposes __version__
+│   ├── config.py         — VERSION, URLs, local config paths
+│   ├── exceptions.py     — custom exception types
+│   ├── first_run.py      — first-run detection and marker
+│   ├── validator.py      — XML structure pre-flight check
+│   ├── harlog.py         — XML parsing and HAR construction
+│   ├── functions.py      — public programmatic API
+│   ├── updater.py        — update checker and pip installer
+│   └── cli.py            — Typer CLI (convert, validate, info, update, help)
+├── scripts/
+│   ├── update_windows.ps1
+│   └── update_unix.sh
+├── tests/
 ├── pyproject.toml
 ├── setup.py
-└── README.md
+├── README.md
+└── LICENSE
 ```
 
 ---
 
 ## Differences from Original Project
 
-This project started from [JoryPein/BurpSuite-HAR-Exporter](https://github.com/JoryPein/BurpSuite-HAR-Exporter) and has been significantly extended. The goal was not to create a cosmetic fork, but to make the tool more robust, maintainable and usable in real-world workflows.
-
-### What changed
+This project started from [JoryPein/BurpSuite-HAR-Exporter](https://github.com/JoryPein/BurpSuite-HAR-Exporter) and has been substantially extended and rewritten by Lorenzo Surico.
 
 | Area | Original | This version |
 |---|---|---|
-| **Code structure** | Single file (`harlog.py`) containing all logic | Separated into `config`, `validator`, `harlog`, `updater`, `functions`, `cli` |
-| **XML validation** | None — parse errors surfaced as raw exceptions | Pre-flight structural check before conversion |
-| **Error categories** | Generic exception | Malformed / Incompatible / Partially compatible — each with a clear user message |
-| **Incompatibility message** | None | Explicit message with link to latest release when Burp's XML format is unrecognised |
-| **CLI output** | Minimal | Step-by-step progress, item count, skipped count, output path |
-| **CLI options** | `filename` only | Added `--output`, `--check-updates`, `--verbose` |
-| **Version management** | Hardcoded string in `harlog.py` | Single `VERSION` constant in `config.py`, used everywhere |
-| **Update checker** | None | Optional `--check-updates` flag; network-free by default; graceful offline fallback |
-| **Encoding handling** | UTF-8 only | UTF-8 with automatic latin-1 fallback in CLI |
-| **Conversion stats** | Not returned | `generate_har` returns `{'entries': N, 'skipped': N}` |
-| **Disk reads** | XML read twice (validation + conversion) | Single read shared between pre-flight check and converter |
-| **`__version__`** | Not exposed | Available via `import bpi2har; bpi2har.__version__` |
-| **Documentation** | Minimal README | Full README with platform-specific install, options table, troubleshooting, compatibility guide |
-
-### Design intent
-
-The original project is a working, self-contained converter. This version adds layers of defensiveness around it — so that when Burp Suite changes its XML format (which it does, occasionally), the user gets a clear actionable message instead of a raw Python traceback, and maintainers have a clean separation of concerns to update only the affected module.
-
-This is an evolution, not a rewrite. The core HTTP parsing and HAR construction logic in `harlog.py` is derived from the original work.
+| **Code structure** | Single file (`harlog.py`) | Modular: `config`, `exceptions`, `first_run`, `validator`, `harlog`, `updater`, `functions`, `cli` |
+| **CLI** | Single `main` command | Subcommands: `convert`, `validate`, `info`, `update`, `help` |
+| **Shorthand** | `bpi2har file.xml` | `burp2har file.xml` (auto-injected as `convert`) |
+| **XML validation** | None | Pre-flight check with four distinct status levels |
+| **Incompatibility message** | Raw Python exception | Clear message with link to latest release |
+| **First-run check** | None | Silent update check on first execution |
+| **Update command** | None | `burp2har update` — GitHub API check + interactive pip install |
+| **Update scripts** | None | `scripts/update_windows.ps1`, `scripts/update_unix.sh` |
+| **`info` command** | None | HTTP methods, hosts, status codes, MIME types |
+| **Timezone handling** | Hardcoded `CST` — crashes on CEST/EDT/BST | Strips timezone token before parsing |
+| **Header truncation** | `split(b': ')` without maxsplit — truncates CSP headers | `split(b': ', 1)` — preserves full header values |
+| **Empty responses** | `isinstance` check bypassed by empty string | Falsy check handles both `None` and `''` |
+| **postData** | Never generated | Built for all requests with non-empty bodies |
+| **Binary/media handling** | Undefined for video/audio | Skips body embedding for video/audio, records size only |
+| **Version management** | Hardcoded in `harlog.py` | Single `VERSION` constant in `config.py` |
+| **HAR creator name** | `bpi2har` | `burp2har` |
+| **Exit codes** | Inconsistent | `0` success, `1` file error, `2` XML error, `3` conversion error |
+| **Command name** | `bpi2har` | `burp2har` |
 
 ---
 
@@ -518,26 +569,12 @@ This project is based on the original work by **JoryPein**.
 |---|---|
 | **Original project** | [JoryPein/BurpSuite-HAR-Exporter](https://github.com/JoryPein/BurpSuite-HAR-Exporter) |
 | **Original author** | [JoryPein](https://github.com/JoryPein) |
-| **This fork** | [xlory04/BurpSuite-HAR-Exporter](https://github.com/xlory04/BurpSuite-HAR-Exporter) |
+| **This fork** | [xlory04/Burpsuite-HAR-Converter](https://github.com/xlory04/Burpsuite-HAR-Converter) |
 | **Maintainer** | Lorenzo Surico |
 
-The original codebase provided the foundation for XML parsing, base64 decoding, and HAR structure construction. All additions — modular architecture, XML validator, CLI improvements, update checker, and documentation — were written independently on top of that base.
+The original codebase provided the foundation for XML parsing, base64 decoding, and HAR structure construction. All additions — modular architecture, XML validator, subcommand CLI, update system, first-run check, `info` command, and documentation — were written independently on top of that base.
 
-The original project is distributed under the MIT License. This fork retains the same license. Full attribution is preserved in the [LICENSE](LICENSE) file.
-
----
-
-## Contributing
-
-Bug reports, feature requests and pull requests are welcome.
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/my-change`
-3. Commit your changes: `git commit -m "Add my change"`
-4. Push to the branch: `git push origin feature/my-change`
-5. Open a pull request
-
-If Burp Suite has updated its XML export format and the tool no longer works, please open an issue and attach a sanitised sample of the new XML so the parser can be updated.
+The original project is distributed under the MIT License. This fork retains the same license.
 
 ---
 
