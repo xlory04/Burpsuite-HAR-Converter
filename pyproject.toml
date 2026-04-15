@@ -1,6 +1,6 @@
 [tool.poetry]
 name        = "burp2har"
-version     = "0.3.0"
+version     = "0.4.1"
 description = "Convert Burp Suite XML exports to HAR format"
 authors     = ["Lorenzo Surico"]
 license     = "MIT"

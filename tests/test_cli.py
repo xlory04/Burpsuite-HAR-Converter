@@ -6,6 +6,7 @@ Uses Typer's CliRunner to invoke the ``app`` object directly (bypassing the
 triggered).
 
 Coverage:
+  - --version: output format and version string
   - convert: exit codes 0, 1, 2; output file creation
   - validate: exit codes 0, 2
   - validate-har: exit codes 0, 2
@@ -18,9 +19,41 @@ import pathlib
 import pytest
 from typer.testing import CliRunner
 
-from burp2har.cli import app
+from burp2har import __version__
+from burp2har.cli import app, _SUBCOMMANDS
 
 runner = CliRunner()
+
+
+# ─── --version and command set ────────────────────────────────────────────────
+
+class TestVersionAndCommandSet:
+
+    def test_version_flag_exit_code_0(self):
+        """--version must exit with code 0."""
+        result = runner.invoke(app, ["--version"])
+        assert result.exit_code == 0
+
+    def test_version_flag_output_contains_version_string(self):
+        """--version output must contain the version from burp2har.__version__."""
+        result = runner.invoke(app, ["--version"])
+        assert __version__ in result.output, (
+            f"Expected version '{__version__}' in output, got: {result.output!r}"
+        )
+
+    def test_version_flag_output_contains_command_name(self):
+        """--version output must mention 'burp2har'."""
+        result = runner.invoke(app, ["--version"])
+        assert "burp2har" in result.output
+
+    def test_all_expected_subcommands_registered(self):
+        """_SUBCOMMANDS must include all commands exposed by the app."""
+        expected = {"convert", "validate", "validate-har", "info", "update", "help"}
+        assert expected == _SUBCOMMANDS, (
+            f"Subcommand set mismatch.\n"
+            f"  Missing from _SUBCOMMANDS : {expected - _SUBCOMMANDS}\n"
+            f"  Extra in _SUBCOMMANDS     : {_SUBCOMMANDS - expected}"
+        )
 
 
 # ─── convert ─────────────────────────────────────────────────────────────────

@@ -2,7 +2,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-0.3.0-orange.svg)](https://github.com/xlory04/Burpsuite-HAR-Converter/releases)
+[![Version](https://img.shields.io/badge/version-0.4.1-orange.svg)](https://github.com/xlory04/Burpsuite-HAR-Converter/releases)
 
 **burp2har** is a command-line tool that converts HTTP traffic exported from Burp Suite (XML format) into the standard **HAR** (HTTP Archive) format.
 
@@ -49,9 +49,12 @@ Many analysis tools (browser DevTools importers, performance analyzers, security
 |---|---|
 | **convert** | Convert Burp XML → HAR with a progress summary |
 | **validate** | Pre-flight XML compatibility check without conversion |
+| **validate-har** | Validate an existing HAR file for structural correctness |
 | **info** | Inspect a Burp export: methods, hosts, status codes, MIME types |
 | **update** | Check GitHub for a newer version and install it interactively |
 | **help** | Detailed user guide with examples |
+| **Filtering** | Keep only matching items by host, HTTP method, or status code (`--only-host`, `--only-status`, `--only-method`) |
+| **Anonymization** | Redact sensitive headers and query parameters from the output HAR (`--anonymize`) |
 | **Shorthand** | `burp2har file.xml` works as a shortcut for `burp2har convert file.xml` |
 | **First-run check** | Silently checks for updates on first execution |
 | **Offline safe** | All network operations are optional and fail gracefully |
@@ -221,6 +224,10 @@ Options:
 | Option | Short | Description | Default |
 |---|---|---|---|
 | `--output PATH` | `-o` | Destination `.har` file | Same directory as input, `.har` extension |
+| `--only-host TEXT` | | Keep only items from this host. Repeatable (OR logic). | all |
+| `--only-status TEXT` | | Keep only items with this HTTP status code. Repeatable (OR logic). | all |
+| `--only-method TEXT` | | Keep only items with this HTTP method. Repeatable (OR logic). | all |
+| `--anonymize` | | Redact Authorization, Cookie, Set-Cookie headers and sensitive query params | off |
 | `--check-updates` | | Verbose update check before converting | off |
 | `--auto-check-updates` | | Silent update check — warns only if newer | off |
 | `--verbose` | `-v` | Show full stack trace on errors | off |
@@ -242,6 +249,30 @@ Outputs one of:
 - `✗ MALFORMED` — file cannot be parsed as XML
 
 Exit codes: `0` = compatible/partial, `2` = incompatible/malformed.
+
+---
+
+### validate-har
+
+Validate an existing HAR file for structural correctness.
+
+```bash
+burp2har validate-har output.har
+burp2har validate-har output.har --no-warnings
+```
+
+Outputs one of:
+- `✓ VALID` — HAR structure passes all checks
+- `! VALID WITH WARNINGS` — structurally sound but has non-critical issues (e.g. status code 0)
+- `✗ INVALID` — JSON is malformed or required HAR fields are absent
+
+Exit codes: `0` = valid/valid-with-warnings, `2` = invalid.
+
+Options:
+
+| Option | Description | Default |
+|---|---|---|
+| `--warnings / --no-warnings` | Show or suppress warning details | on |
 
 ---
 
@@ -320,7 +351,7 @@ python -m burp2har.cli info export.xml
 ```
 $ burp2har convert export.xml
 
-  BurpSuite HAR Converter  v0.3.0
+  BurpSuite HAR Converter  v0.4.1
   ────────────────────────────────────────────
 
   ► Checking input file
@@ -344,7 +375,7 @@ $ burp2har convert export.xml
 ```
 $ burp2har validate export.xml
 
-  BurpSuite HAR Converter  v0.3.0
+  BurpSuite HAR Converter  v0.4.1
   ────────────────────────────────────────────
 
   ► Validation result
@@ -356,7 +387,7 @@ $ burp2har validate export.xml
 ```
 $ burp2har info export.xml
 
-  BurpSuite HAR Converter  v0.3.0
+  BurpSuite HAR Converter  v0.4.1
   ────────────────────────────────────────────
 
   ► File
@@ -392,13 +423,13 @@ $ burp2har info export.xml
 ```
 $ burp2har update
 
-  BurpSuite HAR Converter  v0.3.0
+  BurpSuite HAR Converter  v0.4.1
   ────────────────────────────────────────────
 
   ► Checking for updates
   ╭─ Update Available ──────────────────────────────────╮
-  │ Current version : v0.3.0                            │
-  │ Latest version  : v0.4.0                            │
+  │ Current version : v0.4.1                            │
+  │ Latest version  : v0.4.1                            │
   │ Release page    : https://github.com/...            │
   ╰─────────────────────────────────────────────────────╯
   Install the update now? [Y/n]: y
@@ -517,15 +548,24 @@ Burpsuite-HAR-Converter/
 │   ├── config.py         — VERSION, URLs, local config paths
 │   ├── exceptions.py     — custom exception types
 │   ├── first_run.py      — first-run detection and marker
-│   ├── validator.py      — XML structure pre-flight check
-│   ├── harlog.py         — XML parsing and HAR construction
-│   ├── functions.py      — public programmatic API
+│   ├── validator.py      — XML structure pre-flight check (four CompatibilityStatus levels)
+│   ├── har_validator.py  — HAR structure validator (three HarValidationStatus levels)
+│   ├── harlog.py         — XML parsing, HAR construction, filtering, anonymization
+│   ├── functions.py      — public programmatic API (burp2har_run)
 │   ├── updater.py        — update checker and pip installer
-│   └── cli.py            — Typer CLI (convert, validate, info, update, help)
+│   └── cli.py            — Typer CLI (convert, validate, validate-har, info, update, help)
 ├── scripts/
 │   ├── update_windows.ps1
 │   └── update_unix.sh
 ├── tests/
+│   ├── conftest.py
+│   ├── helpers.py
+│   ├── fixtures/
+│   ├── test_conversion.py
+│   ├── test_validation.py
+│   ├── test_filters.py
+│   ├── test_anonymization.py
+│   └── test_cli.py
 ├── pyproject.toml
 ├── setup.py
 ├── README.md
