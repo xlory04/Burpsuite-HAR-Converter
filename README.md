@@ -2,7 +2,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-0.4.1-orange.svg)](https://github.com/xlory04/Burpsuite-HAR-Converter/releases)
+[![Version](https://img.shields.io/badge/version-0.4.2-orange.svg)](https://github.com/xlory04/Burpsuite-HAR-Converter/releases)
 
 **burp2har** is a command-line tool that converts HTTP traffic exported from Burp Suite (XML format) into the standard **HAR** (HTTP Archive) format.
 
@@ -195,6 +195,30 @@ burp2har --version
 
 ---
 
+### If `burp2har` is not found after installation
+
+When installing without a virtual environment, pip places the `burp2har` script in a user-local directory that may not be on your `PATH`.
+
+**Windows** — add the Scripts directory to your user `Path`:
+1. Open **System Properties → Advanced → Environment Variables**
+2. Under *User variables*, find `Path` and append the directory shown in the pip install warning (typically `%APPDATA%\Python\Python3xx\Scripts`)
+
+**Linux / macOS** — add `~/.local/bin` (or `~/Library/Python/3.x/bin` on macOS) to your shell profile:
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc   # or ~/.zshrc
+source ~/.bashrc
+```
+
+> **Tip:** Using a virtual environment (`venv`) is the simplest solution — `burp2har` is always available once the environment is activated, with no PATH changes needed.
+>
+> **Alternative (no PATH change required):** `python -m burp2har` works in any environment:
+> ```bash
+> python -m burp2har --help
+> python -m burp2har convert export.xml
+> ```
+
+---
+
 ## Exporting from Burp Suite
 
 1. Open **Burp Suite** and navigate to **Proxy → HTTP history** (or **Target → Site map**).
@@ -337,9 +361,9 @@ burp2har convert export.xml
 ### Run without installing
 
 ```bash
-python -m burp2har.cli convert export.xml
-python -m burp2har.cli validate export.xml
-python -m burp2har.cli info export.xml
+python -m burp2har convert export.xml
+python -m burp2har validate export.xml
+python -m burp2har info export.xml
 ```
 
 ---
@@ -351,7 +375,7 @@ python -m burp2har.cli info export.xml
 ```
 $ burp2har convert export.xml
 
-  BurpSuite HAR Converter  v0.4.1
+  BurpSuite HAR Converter  v0.4.2
   ────────────────────────────────────────────
 
   ► Checking input file
@@ -375,7 +399,7 @@ $ burp2har convert export.xml
 ```
 $ burp2har validate export.xml
 
-  BurpSuite HAR Converter  v0.4.1
+  BurpSuite HAR Converter  v0.4.2
   ────────────────────────────────────────────
 
   ► Validation result
@@ -387,7 +411,7 @@ $ burp2har validate export.xml
 ```
 $ burp2har info export.xml
 
-  BurpSuite HAR Converter  v0.4.1
+  BurpSuite HAR Converter  v0.4.2
   ────────────────────────────────────────────
 
   ► File
@@ -423,13 +447,13 @@ $ burp2har info export.xml
 ```
 $ burp2har update
 
-  BurpSuite HAR Converter  v0.4.1
+  BurpSuite HAR Converter  v0.4.2
   ────────────────────────────────────────────
 
   ► Checking for updates
   ╭─ Update Available ──────────────────────────────────╮
-  │ Current version : v0.4.1                            │
-  │ Latest version  : v0.4.1                            │
+  │ Current version : v0.4.2                            │
+  │ Latest version  : v0.4.2                            │
   │ Release page    : https://github.com/...            │
   ╰─────────────────────────────────────────────────────╯
   Install the update now? [Y/n]: y
@@ -501,7 +525,8 @@ Conversion, validation, and `info` always work without internet access.
 
 The package is not on your PATH. Either:
 - Activate your virtual environment: `source venv/bin/activate` (Linux/macOS) or `venv\Scripts\activate` (Windows)
-- Or run as a module: `python -m burp2har.cli <subcommand> <file.xml>`
+- Or use module execution: `python -m burp2har <subcommand> <file.xml>`
+- Or add the Scripts/bin directory to your PATH — see [If `burp2har` is not found after installation](#if-burp2har-is-not-found-after-installation)
 
 **`UnicodeDecodeError` when reading the XML**
 
@@ -545,6 +570,7 @@ The tool requires outbound HTTPS to `api.github.com`. If you are on a restricted
 Burpsuite-HAR-Converter/
 ├── burp2har/
 │   ├── __init__.py       — exposes __version__
+│   ├── __main__.py       — enables `python -m burp2har` module execution
 │   ├── config.py         — VERSION, URLs, local config paths
 │   ├── exceptions.py     — custom exception types
 │   ├── first_run.py      — first-run detection and marker

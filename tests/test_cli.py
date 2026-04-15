@@ -10,11 +10,14 @@ Coverage:
   - convert: exit codes 0, 1, 2; output file creation
   - validate: exit codes 0, 2
   - validate-har: exit codes 0, 2
+  - entry point: ``python -m burp2har`` and ``burp2har`` console script
 """
 from __future__ import annotations
 
 import json
 import pathlib
+import subprocess
+import sys
 
 import pytest
 from typer.testing import CliRunner
@@ -199,3 +202,52 @@ class TestValidateHarCommand:
         runner.invoke(app, ["convert", str(f), "-o", str(out)])
         result = runner.invoke(app, ["validate-har", str(out)])
         assert result.exit_code == 0
+
+
+# ─── entry-point smoke tests ──────────────────────────────────────────────────
+
+class TestEntryPoints:
+    """Verify the two public invocation paths work after installation."""
+
+    def test_module_execution_exit_code_0(self):
+        """``python -m burp2har --version`` must exit with code 0."""
+        proc = subprocess.run(
+            [sys.executable, "-m", "burp2har", "--version"],
+            capture_output=True, text=True,
+        )
+        assert proc.returncode == 0, (
+            f"python -m burp2har --version exited {proc.returncode}\n"
+            f"stdout: {proc.stdout!r}\n"
+            f"stderr: {proc.stderr!r}"
+        )
+
+    def test_module_execution_output_contains_version(self):
+        """``python -m burp2har --version`` must print the package version."""
+        proc = subprocess.run(
+            [sys.executable, "-m", "burp2har", "--version"],
+            capture_output=True, text=True,
+        )
+        assert __version__ in proc.stdout, (
+            f"Expected version '{__version__}' in output, got: {proc.stdout!r}"
+        )
+
+    def test_console_script_exit_code_0(self):
+        """``burp2har --version`` (installed console script) must exit with code 0."""
+        # Locate the installed script next to the current Python interpreter so
+        # the test works in virtualenvs, editable installs, and CI alike.
+        scripts_dir = pathlib.Path(sys.executable).parent
+        burp2har_exe = scripts_dir / "burp2har"
+        if not burp2har_exe.exists():
+            burp2har_exe = scripts_dir / "burp2har.exe"  # Windows
+        if not burp2har_exe.exists():
+            pytest.skip("burp2har console script not found — run 'pip install -e .' first")
+
+        proc = subprocess.run(
+            [str(burp2har_exe), "--version"],
+            capture_output=True, text=True,
+        )
+        assert proc.returncode == 0, (
+            f"burp2har --version exited {proc.returncode}\n"
+            f"stdout: {proc.stdout!r}\n"
+            f"stderr: {proc.stderr!r}"
+        )

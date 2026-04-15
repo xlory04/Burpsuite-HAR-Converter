@@ -1,6 +1,30 @@
+# ── PEP 621 metadata (read by pip, build tools, and any PEP 517 frontend) ──────
+[project]
+name            = "burp2har"
+version         = "0.4.2"
+description     = "Convert Burp Suite XML exports to HAR format"
+readme          = "README.md"
+license         = {text = "MIT"}
+requires-python = ">=3.8"
+authors         = [{name = "Lorenzo Surico"}]
+keywords        = ["burpsuite", "har", "xml", "converter", "pentesting", "security"]
+dependencies    = [
+    "typer>=0.9.0",
+    "rich>=10.0.0",
+]
+
+[project.urls]
+Homepage   = "https://github.com/xlory04/Burpsuite-HAR-Converter"
+Repository = "https://github.com/xlory04/Burpsuite-HAR-Converter"
+
+# Console script — registered by pip install / pip install -e .
+[project.scripts]
+burp2har = "burp2har.cli:run"
+
+# ── Poetry metadata (used when building / publishing via Poetry) ───────────────
 [tool.poetry]
 name        = "burp2har"
-version     = "0.4.1"
+version     = "0.4.2"
 description = "Convert Burp Suite XML exports to HAR format"
 authors     = ["Lorenzo Surico"]
 license     = "MIT"
@@ -21,7 +45,7 @@ rich   = ">=10.0.0"
 burp2har = "burp2har.cli:run"
 
 [build-system]
-requires      = ["poetry-core"]
+requires      = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.pytest.ini_options]

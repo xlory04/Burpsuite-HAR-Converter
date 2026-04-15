@@ -12,7 +12,7 @@ entry_points = {'console_scripts': ['burp2har = burp2har.cli:run']}
 
 setup(
     name='burp2har',
-    version='0.4.1',
+    version='0.4.2',
     description='Convert Burp Suite XML exports to HAR format',
     long_description=open('README.md', encoding='utf-8').read(),
     long_description_content_type='text/markdown',

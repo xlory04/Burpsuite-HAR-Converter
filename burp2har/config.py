@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pathlib
 
-VERSION = "0.4.1"
+VERSION = "0.4.2"
 
 # Human-readable name used in banners and panels
 DISPLAY_NAME = "BurpSuite HAR Converter"
